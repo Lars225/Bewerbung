@@ -19,13 +19,16 @@ async def on_ready():
     # client.loop.create_task(status_task())
     client.loop.create_task(RecieveMessages())
 
-
+# Das Event reagiert auf gesendete Nachrichten auf dem Discord Server
 @client.event
 async def on_message(message):
     if message.author.bot:
         return
+    # Die Nachrichten werden nach Commands die mit ! beginnen gefiltert.
     elif message.content.startswith('!'):
         Tools.call_cmd(message.content, message)
+    # Wenn eine Nachricht in den Channel mit der Id 564183701219442688 gesendet wird, 
+    # wird die Nachricht in die MongoDB und durch eine Modifikation in den Spiel Chat auf dem GameServer übertragen
     elif message.channel.id == 564183701219442688:
         await Database.mdb.EcoChat.DiscordMessages.insert_one({"Author": message.author.display_name,
                                                                "Message": message.content})
@@ -33,9 +36,7 @@ async def on_message(message):
         return
 
 
-# roles = discord.utils.get(after.guild.roles, name="Spieler")
-
-
+# Die mongoDb wird auf neue Einträge die von dem GameServer kommen überprüft und in den Channel mit der Id 564183701219442688 übertragen.
 async def RecieveMessages():
     spielchat = client.get_channel(564183701219442688)
     async with Database.mdb.EcoChat.ServerMessages.watch(full_document='updateLookup') as change_stream:
@@ -46,27 +47,6 @@ async def RecieveMessages():
                 message = doc.get("Message")
                 if author and message:
                     await spielchat.send(f"{author}: {message}")
-
-            # spielchat.send("{}: {}".format(change.get("fullDocument", {}).get("Author"), change.get("fullDocument",
-            # {}).get("Message")))
-
-    # spielchat = client.get_channel(690291237106090046)
-    # cursor = mongoClient.EcoChat.ServerMessages.watch(full_document='updateLookup')
-    # while True:
-    # document = next(cursor)
-    # if document is not None:
-    # await spielchat.send(
-    # "{}: {}".format(document.get("fullDocument", {}).get("Author"), document.get("fullDocument", {}).get("Message")))
-    # await asyncio.sleep(1)
-
-
-# Statuswechsel
-# async def status_task():
-#    while True:
-#        await client.change_presence(activity=discord.Game("Status 1!"), status=discord.Status.online)
-#        await asyncio.sleep(10)
-#        await client.change_presence(activity=discord.Game("Status 2!"), status=discord.Status.online)
-#        await asyncio.sleep(10)
 
 
 client.run(SECRET.TOKEN)
