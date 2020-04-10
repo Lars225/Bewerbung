@@ -1,22 +1,30 @@
+import asyncio
+import random
+
+import discord
+
 import Database
-import DiscordBot
-
-# Der Wrapper ermöglicht ein komfortableres Zugreifen und anlegen von neuen ChatCommands
-def cmd(befehl_name):
-    def wrapper(func):
-        def inner_wrapper(args, msg):
-            func(args, msg)
-
-        DiscordBot.all_commands[befehl_name] = inner_wrapper
-        return func
-    return wrapper
-
-# ChatCommands werden in Invoke und Args unterteilt. Der Invoke ruft über den Wrapper die zugeordnete Methode mit den passenden Args auf.
-def call_cmd(content, msg):
-    invoke = content.split(" ")[0].lower()
-    print("Befehl: {}".format(invoke))
-    DiscordBot.all_commands[invoke](content.split(" ")[1:], msg)
 
 
-def is_not_pinned(mess):
-    return not mess.pinned
+# Die Datenbank wird auf veränderungen überprüft und sendet diese in den Channel mit der angegebenen Id
+async def RecieveMessages(client):
+    spielchat = client.get_channel(695958163366871081)
+    async with Database.mdb.EcoChat.ServerMessages.watch(full_document='updateLookup') as change_stream:
+        async for change in change_stream:
+            doc = change.get("fullDocument")
+            if doc:
+                author = doc.get("Author")
+                message = doc.get("Message")
+                if author and message:
+                    await spielchat.send(f"{author}: {message}")
+
+
+# Alle 2 Stunden wird die Datenbank abgefragt, ein zufälliger Status ausgewählt und im DiscordBot aktualisiert
+async def status_task(client):
+    while True:
+        status = await Database.mdb.EcoChat.checkedStatus.find().to_list(None)
+        listsize = len(status) - 1
+        zufallszahl = random.randrange(0, listsize)
+        message = status[zufallszahl].get("Message")
+        await client.change_presence(activity=discord.Game(message), status=discord.Status.online)
+        await asyncio.sleep(7200)

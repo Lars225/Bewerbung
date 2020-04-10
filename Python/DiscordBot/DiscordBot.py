@@ -1,52 +1,82 @@
-import discord
-from discord import Member, Role
+import asyncio
 
-import Database
-import SECRET
+import motor
+import discord
+
 import Commands
+import Database
+
+import SECRET
 import Tools
 
-client = discord.Client()
+global firstStart
+firstStart = True
 
-all_commands = {}
+client = discord.Client()
 
 
 @client.event
 async def on_ready():
+    global firstStart
     print("Wir sind eingeloggt als User {}".format(client.user))
-    await client.change_presence(activity=discord.Game("Work in Progress!"), status=discord.Status.online)
-    await Database.init(loop=client.loop)
-    # client.loop.create_task(status_task())
-    client.loop.create_task(RecieveMessages())
+    # await client.change_presence(activity=discord.Game("Work in Progress!"), status=discord.Status.online)
+    if firstStart:
+        await Database.init(loop=client.loop)
+        client.loop.create_task(Tools.status_task(client))
+        client.loop.create_task(Tools.RecieveMessages(client))
+        Commands.client = client
+        firstStart = False
 
-# Das Event reagiert auf gesendete Nachrichten auf dem Discord Server
+
+# Event reagiert auf Nachrichten die überall auf dem Discord Server geschrieben werden
 @client.event
 async def on_message(message):
+    # Bot Nachrichten werden ignoriert
     if message.author.bot:
         return
-    # Die Nachrichten werden nach Commands die mit ! beginnen gefiltert.
+    # Falls die Nachricht mit ! beginnt wird sie als Command behandelt
     elif message.content.startswith('!'):
-        Tools.call_cmd(message.content, message)
-    # Wenn eine Nachricht in den Channel mit der Id 564183701219442688 gesendet wird, 
-    # wird die Nachricht in die MongoDB und durch eine Modifikation in den Spiel Chat auf dem GameServer übertragen
-    elif message.channel.id == 564183701219442688:
-        await Database.mdb.EcoChat.DiscordMessages.insert_one({"Author": message.author.display_name,
-                                                               "Message": message.content})
+        await Commands.startCommand(message)
+    # Falls die Nachricht in dem Channel mit der angegebenen Id ist
+    elif message.channel.id == 695958163366871081:
+        if message.content.startswith('!'):
+            await Commands.startCommand(message)
+        else:
+            await Database.mdb.EcoChat.DiscordMessages.insert_one({"Author": message.author.display_name,
+                                                                   "Message": message.content})
+    # Nachrichten in dem Cahnnel mit der Id werden in die Datenbank gespeichert und Später als Status für den Bot verwendet
+    elif message.channel.id == 696846184085454959:
+        await Database.mdb.EcoChat.Status.insert_one({"Author": message.author.display_name,
+                                                      "Message": message.content})
+        await message.delete()
+        await message.channel.send(
+            "{} danke für deine Status Einsendung! Der Status wurde gespeichert!".format(message.author.mention))
+        # Es wir eine Eingebette Nachricht erstellt mit den Infos über die Einsendung
+        embedmessage = discord.Embed(title="Danke {} für deine Statuseisnendung!".format(message.author),
+                                     # description="Danke {} für deine Statuseisnendung!".format(message.author),
+                                     color=discord.Color.green())
+        embedmessage.add_field(name="Status:", value=message.content,
+                               inline=True)
+        dm = await message.author.create_dm()
+        await dm.send(embed=embedmessage)
     else:
         return
 
-
-# Die mongoDb wird auf neue Einträge die von dem GameServer kommen überprüft und in den Channel mit der Id 564183701219442688 übertragen.
-async def RecieveMessages():
-    spielchat = client.get_channel(564183701219442688)
-    async with Database.mdb.EcoChat.ServerMessages.watch(full_document='updateLookup') as change_stream:
-        async for change in change_stream:
-            doc = change.get("fullDocument")
-            if doc:
-                author = doc.get("Author")
-                message = doc.get("Message")
-                if author and message:
-                    await spielchat.send(f"{author}: {message}")
+    # roles = discord.utils.get(after.guild.roles, name="Spieler")
 
 
 client.run(SECRET.TOKEN)
+
+# spielchat.send("{}: {}".format(change.get("fullDocument", {}).get("Author"), change.get("fullDocument",
+# {}).get("Message")))
+
+# spielchat = client.get_channel(690291237106090046)
+# cursor = mongoClient.EcoChat.ServerMessages.watch(full_document='updateLookup')
+# while True:
+# document = next(cursor)
+# if document is not None:
+# await spielchat.send(
+# "{}: {}".format(document.get("fullDocument", {}).get("Author"), document.get("fullDocument", {}).get("Message")))
+# await asyncio.sleep(1)
+
+# Statuswechsel
